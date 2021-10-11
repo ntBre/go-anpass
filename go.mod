@@ -1,4 +1,4 @@
-module bwestbro.com/anpass
+module github.com/ntBre/anpass
 
 go 1.17
 

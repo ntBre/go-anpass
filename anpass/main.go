@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"bwestbro.com/anpass"
+	"github.com/ntBre/anpass"
 )
 
 var (
