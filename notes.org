@@ -1,0 +1,154 @@
+# -*- eval: (plist-put org-format-latex-options :scale 1.5); -*-
+* refactoring notes
+  - my agreement with their fort.9903 files got a bit worse after
+    refactoring to run anpass2 without rereading the input file.
+  - I think that is reasonable since I could use the full internal
+    precision instead of being limited to rereading the stationary
+    point as 20.12f values, we'll see when I test through frequencies
+    though
+* math.Pow benchmarking
+  float switch it is, that's the safest as it can catch non-integers
+  anyway
+  | Type         | Time (ns/op) |   Mean |
+  |--------------+--------------+--------|
+  | Int Switch   |       906438 | 824050 |
+  |              |       659716 |        |
+  |              |       833159 |        |
+  |              |       847003 |        |
+  |              |       873934 |        |
+  |--------------+--------------+--------|
+  | Float Switch |       745043 | 798909 |
+  |              |      1017141 |        |
+  |              |       621703 |        |
+  |              |       766359 |        |
+  |              |       844299 |        |
+  |--------------+--------------+--------|
+  | Pow          |       596718 | 909547 |
+  |              |      1048316 |        |
+  |              |       812252 |        |
+  |              |      1058541 |        |
+  |              |      1031911 |        |
+
+* Eval produces this for a given i
+  \begin{equation*}
+  \sum_k C_k \prod_j X_{ij}^{E_{jk}}
+  \end{equation*}
+  what I want instead is to construct the matrix Χ_ik without
+  summing. The intial Ck are all set to 1
+  \begin{equation*}
+  \chi_{ik} = C_k \prod_j x_{ij}^{e_{jk}}
+  \end{equation*}
+  In both cases, i corresponds to a given structure/energy, j is a
+  given coordinate, and k are the unknowns/coefficients.
+
+  Also construct the energy vector y and solve the matrix equation
+  \begin{equation*}
+  \vec{\beta} = (\chi^\intercal \chi)^{-1}\chi^\intercal \vec{y}
+  \end{equation*}
+  to yield the optimial coefficients β
+* DONE I guess I should try just doing the inversion like they do
+  - look into matrix math for inversion, maybe their conditionals
+    effectively prune the problematic values or something
+  - either way, writing out the code myself and getting it to work
+    should help me understand what is happening
+  - tried a solution based on [[https://en.wikipedia.org/wiki/Linear_least_squares][ordinary least squares]] in Fit, but I'm
+    not sure I have the right matrices; it did not go well. Got a
+    condition number of e+36, sum of residuals of e+4, and it was a
+    maximum
+    - see also [[https://en.wikipedia.org/wiki/Polynomial_regression][polynomial regression]] linked therein, this might
+      actually be the most promising
+    #+begin_src go
+      var prod mat.Dense
+      prod.Mul(G.T(), G)
+      var inv mat.Dense
+      err := inv.Inverse(&prod)
+      if err != nil {
+	      if strings.Contains(err.Error(), "Inf") {
+		      panic(err)
+	      }
+	      fmt.Fprintf(os.Stderr, "WARNING: %v\n", err)
+      }
+      var prod2 mat.Dense
+      prod2.Mul(&inv, &prod)
+      var sol mat.Dense
+      sol.Mul(&prod2, B)
+    #+end_src
+* DONE try to make matrices better conditioned
+  - this is at the fitting stage, right at the start
+  - none of the hydrocarbons is working and water was pushing it
+    anyway
+  - might have to try pruning some of the values or something
+  - try step size first though, although I did try that before to no
+    avail
+
+* DONE resume in newton.f with grad and hess
+  - as the comment says, we're just doing newton-raphson with direct
+    inversion of the hessian
+
+what do the numbers mean? this is a polynomial, need to think about
+what it means though
+
+well I guess I don't have to think that hard since FUNCTION EVAL tells
+me. I think these are the coefficients, I just need to figure out
+where iexpo comes from, the exponent. presumably its the index in
+these rows
+
+okay these are the exponents actually I think, what is 22? is that the
+number of terms in the polynomial? let's see Thackston18 about that,
+anyway, for now it should suffice to read this in
+
+yeah these are the exponents, now I need to figure out where the
+coefficients come from, I believe they start out as 1, see "if weights
+are not read. (they are then taken as unity)" comment
+
+#+begin_src text
+0    1    0    2    1    0    0    3    2    1    0    1    0    4    3    2    1    0    2    1    0    0
+0    0    1    0    1    2    0    0    1    2    3    0    1    0    1    2    3    4    0    1    2    0
+0    0    0    0    0    0    2    0    0    0    0    2    2    0    0    0    0    0    2    2    2    4
+#+end_src
+
+each term is x_0(first row)
+
+I need to figure out where the expansion coefficients come from, I
+guess that ties everything together
+
+CALL FIT seems to be what I'm up to
+
+looks like the first couple loops initialize things to D0, which I
+believe is set to 0 initially in anpass.f
+
+initialize COEFF, B, and G to zero
+
+the heart of fit I think is line 39 Eval(R(1, I), Coeff) : evaluate
+the polynomial with X = a row(? or col) from R and COEFF stepped from
+0 to 1. Then B(J) = WI (weight I?) * EI (energy I?) * SJ (result of
+eval). I think the k loop is doing jacTjac basically
+
+[[https://stackoverflow.com/questions/17891508/how-can-a-scalar-be-passed-to-a-vector-1d-array-to-a-fortran-subroutine][Fortran scalar as array]]
+
+then dminv inverts G and multiplies on the right to get the solution,
+I can just call solve directly once I set up the proper matrices
+
+does it only do one step of fitting? I was assuming this was an
+iterative process. I guess you can obtain an exact solution in one
+step Ax = b
+
+R is aptly named, those are the displacements. R(1, I) is a single
+number, the ith displacement in the first coordinate
+
+very confusingly, fit passes R(1,I) to EVAL and eval treats that like
+a vector somehow, I guess it's just a reference to R(1,I) in memory so
+it can be implicitly converted to an array. EVAL is where the loop
+over the other variables happens 1,NVBL over k
+
+k is variable, j is column
+
+so eval returns sum of COEFF(J)*X(K)**IEXPO(K,J)
+
+product over k of x(k)^iexp stored into coj
+
+could probably speed this up by using horner's rule if this is a
+bottleneck
+
+compare results of my eval to TERM VALUES AT POINT from extended
+anpass output
