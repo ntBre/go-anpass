@@ -160,11 +160,15 @@ func Fit(disps *mat.Dense, energies []float64, exps *mat.Dense) (
 	_, coeffs := exps.Dims()
 	pts := len(energies)
 	X := mat.NewDense(pts, coeffs, nil)
-	var prod, Ejk float64
+	var (
+		prod, Ejk float64
+		xijs      []float64
+	)
 	for i := 0; i < pts; i++ {
+		xijs = disps.RawRowView(i)
 		for k := 0; k < coeffs; k++ {
 			prod = 1.0
-			for j, xij := range disps.RawRowView(i) {
+			for j, xij := range xijs {
 				Ejk = exps.At(j, k)
 				switch Ejk {
 				case 0.0:
