@@ -131,7 +131,7 @@ func TestFull(t *testing.T) {
 		fmt.Printf("starting %s\n", test.infile)
 		disps, energies, exps, biases, _ := ReadInput(test.infile)
 		disps, energies = Bias(disps, energies, biases)
-		longLine, _, _ := Run(w, disps, energies, exps)
+		longLine, _, _ := Run(w, ".", disps, energies, exps)
 		if test.lineps == 0 {
 			test.lineps = 1e-12
 		}
@@ -139,7 +139,7 @@ func TestFull(t *testing.T) {
 			t.Fatalf("got %v, wanted %v\n", longLine, test.lline)
 		}
 		disps, energies = Bias(disps, energies, longLine)
-		_, got, _ := Run(w, disps, energies, exps)
+		_, got, _ := Run(w, ".", disps, energies, exps)
 		want := load9903(test.want)
 		if !compFC(got, want, test.eps) {
 			t.Errorf("FAIL %s\n", test.infile)

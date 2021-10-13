@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -473,11 +474,11 @@ func CopyAnpass(infile, outfile string, longLine []float64) {
 	}
 }
 
-func Run(w io.Writer, disps *mat.Dense, energies []float64, exps *mat.Dense) (
-	longLine []float64, fcs []FC, stationary bool) {
+func Run(w io.Writer, dir string, disps *mat.Dense, energies []float64,
+	exps *mat.Dense) (longLine []float64, fcs []FC, stationary bool) {
 	coeffs, fn := Fit(disps, energies, exps)
 	PrintResiduals(w, coeffs, fn, energies)
-	fcs = Write9903("fort.9903", coeffs, exps)
+	fcs = Write9903(filepath.Join(dir, "fort.9903"), coeffs, exps)
 	x := Newton(coeffs, exps)
 	// characterize stationary point found by Newton
 	evals, evecs, kind := Characterize(x, coeffs, exps)
