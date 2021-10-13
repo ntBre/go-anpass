@@ -164,6 +164,7 @@ func Fit(disps *mat.Dense, energies []float64, exps *mat.Dense) (
 		prod, Ejk float64
 		xijs      []float64
 	)
+	tmp := make([]float64, coeffs)
 	for i := 0; i < pts; i++ {
 		xijs = disps.RawRowView(i)
 		for k := 0; k < coeffs; k++ {
@@ -184,8 +185,9 @@ func Fit(disps *mat.Dense, energies []float64, exps *mat.Dense) (
 					panic("didn't match exponent")
 				}
 			}
-			X.Set(i, k, prod)
+			tmp[k] = prod
 		}
+		X.SetRow(i, tmp)
 	}
 	y := mat.NewDense(pts, 1, energies)
 	var XTX mat.Dense
