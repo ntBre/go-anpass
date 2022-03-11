@@ -23,8 +23,10 @@ func nearby(a, b, eps float64) bool {
 func eql(a, b []float64, eps float64) bool {
 	for i := range a {
 		if !nearby(a[i], b[i], eps) {
-			fmt.Printf("problem with value %d, diff = %g\n",
-				i, a[i]-b[i])
+			fmt.Printf(
+				"problem with value %d, diff = %g, eps = %g\n",
+				i, a[i]-b[i], eps,
+			)
 			return false
 		}
 	}

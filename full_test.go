@@ -147,3 +147,26 @@ func TestFull(t *testing.T) {
 		fmt.Printf("finished %s in %v\n", test.infile, time.Since(now))
 	}
 }
+
+func TestNewton(t *testing.T) {
+	disps, energies, exps, _, _ := ReadInput("full_tests/c3h2.in")
+	coeffs, _ := Fit(disps, energies, exps)
+	got := Newton(coeffs, exps)
+	want := []float64{
+		-0.000124209618, 0.000083980449, -0.000036821098,
+		-0.000117696241, 0.000000000000, 0.000000000000,
+		0.000000000000, 0.000000000000, 0.000000000000,
+		-0.000000022736,
+	}
+	if !eql(got, want, 1e-12) {
+		t.Errorf("got %v, wanted %v\n", got, want)
+	}
+}
+
+func BenchmarkNewton(b *testing.B) {
+	disps, energies, exps, _, _ := ReadInput("full_tests/c3h2.in")
+	coeffs, _ := Fit(disps, energies, exps)
+	for i := 0; i < b.N; i++ {
+		Newton(coeffs, exps)
+	}
+}

@@ -302,68 +302,74 @@ func Grad(x []float64, coeffs, exps *mat.Dense) (grd []float64) {
 func Hess(x []float64, coeffs, exps *mat.Dense) *mat.SymDense {
 	nvbl, nunk := exps.Dims()
 	var (
-		ij  int
+		il  int
 		sum float64
 	)
+	coeffSlice := coeffs.RawMatrix().Data
 	hess := make([]float64, nvbl*(nvbl-1))
+	var (
+		coj, eij, elj, ekj float64
+	)
 	for i := 0; i < nvbl; i++ {
 		for l := 0; l <= i; l++ {
 			sum = 0.0
 			if i != l { // => off-diagonal
 				for j := 0; j < nunk; j++ {
-					coj := coeffs.At(j, 0)
-					coj *= exps.At(i, j) * exps.At(l, j)
+					coj = coeffSlice[j]
+					eij = exps.At(i, j)
+					elj = exps.At(l, j)
+					coj *= eij * elj
 					if math.Abs(coj) < THR {
 						continue
 					}
-					if exps.At(i, j) != 1 {
-						coj *= math.Pow(x[i],
-							exps.At(i, j)-1)
+					if eij != 1 {
+						coj *= math.Pow(x[i], eij-1)
 					}
-					if exps.At(l, j) != 1 {
-						coj *= math.Pow(x[l],
-							exps.At(l, j)-1)
+					if elj != 1 {
+						coj *= math.Pow(x[l], elj-1)
 					}
 					for k := 0; k < nvbl; k++ {
-						if k != i && k != l &&
-							exps.At(k, j) != 0 {
-							coj *= math.Pow(x[k],
-								exps.At(k, j))
+						if k != i && k != l {
+							if ekj = exps.At(k, j); ekj != 0 {
+								coj *= math.Pow(x[k], ekj)
+							}
 						}
 					}
 					sum += coj
 				}
 			} else { // => diagonal
 				for j := 0; j < nunk; j++ {
-					coj := coeffs.At(j, 0)
-					coj *= exps.At(i, j)
-					coj *= exps.At(i, j) - 1
+					coj = coeffSlice[j]
+					eij = exps.At(i, j)
+					coj *= eij
+					coj *= eij - 1
 					if math.Abs(coj) < THR {
 						continue
 					}
 					if exps.At(i, j) != 2 {
 						coj *= math.Pow(x[i],
-							exps.At(i, j)-2)
+							eij-2)
 					}
 					for k := 0; k < nvbl; k++ {
-						if k != i && exps.At(k, j) != 0 {
-							coj *= math.Pow(x[k],
-								exps.At(k, j))
+						if k != i {
+							if ekj = exps.At(k, j); ekj != 0 {
+								coj *= math.Pow(x[k], ekj)
+							}
 						}
 					}
 					sum += coj
 				}
 			}
-			hess[ij] = sum
-			ij++
+			hess[il] = sum
+			il++
 		}
 	}
 	ret := mat.NewSymDense(nvbl, nil)
-	ij = 0
+	il = 0
 	for i := 0; i < nvbl; i++ {
 		for j := 0; j <= i; j++ {
-			ret.SetSym(i, j, hess[ij])
-			ij++
+			ret.SetSym(i, j, hess[il])
+			il++
 		}
 	}
 	return ret
@@ -388,29 +394,29 @@ func Newton(coeffs, exps *mat.Dense) []float64 {
 			iconv bool = true
 			sum   float64
 		)
-		del := make([]float64, nvbl)
-		for i := 0; i < nvbl; i++ {
-			sum = 0.0
-			for j := 0; j < nvbl; j++ {
-				sum += 0.5 * invHess.At(i, j) * grad[j]
-			}
-			del[i] = sum
-			if math.Abs(sum) > 1.1e-8 {
+		_, c := hess.Dims()
+		gradMat := mat.NewDense(c, 1, grad)
+		var del mat.Dense
+		del.Mul(&invHess, gradMat)
+		del.Scale(0.5, &del)
+		for _, i := range del.RawMatrix().Data {
+			if i > 1.1e-8 {
 				iconv = false
+				break
 			}
 		}
 		if iconv {
 			return x
 		} else if Debug {
-			fmt.Printf("ITERATION %5d UPDATE VECTOR, RES = %12.9f\n",
+			fmt.Printf("ITERATION %5d UPDATE VECTOR, RES = %+10.5e\n",
 				iter+1, sum)
-			for i := range del {
-				fmt.Printf("%12.8f", del[i])
+			for _, i := range del.RawMatrix().Data {
+				fmt.Printf("%12.8f", i)
 			}
 			fmt.Print("\n")
 		}
 		for i := range x {
-			x[i] -= del[i]
+			x[i] -= del.At(i, 0)
 		}
 	}
 	panic("TOO MANY NEWTON-RAPHSON ITERATIONS")
@@ -474,6 +480,9 @@ func CopyAnpass(infile, outfile string, longLine []float64) {
 	}
 }
 
+// Run runs anpass: it computes the coefficients that fit disps, energies, and
+// exps; it then calls Newton to locate the stationary point and evaluates the
+// function at the stationary point.
 func Run(w io.Writer, dir string, disps *mat.Dense, energies []float64,
 	exps *mat.Dense) (longLine []float64, fcs []FC, stationary bool) {
 	coeffs, fn := Fit(disps, energies, exps)
