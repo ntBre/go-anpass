@@ -20,6 +20,7 @@ const THR = 1e-10
 var (
 	Quiet bool
 	Debug bool
+	MAXIT = 100
 )
 
 type FC struct {
@@ -228,6 +229,37 @@ func PrintResiduals(w io.Writer, x, A *mat.Dense, energies []float64) (
 	return
 }
 
+// MakeFCs is a a copy of Make9903 without the Writer. It just returns the slice
+// of force constants instead of formatting them for output
+func MakeFCs(coeffs, exps *mat.Dense) (ret []FC) {
+	c, r := exps.Dims()
+	for i := 0; i < r; i++ {
+		ifact := 1
+		var ictmp [4]int
+		iccount := 0
+		for j := c - 1; j >= 0; j-- {
+			iexpo := int(exps.At(j, i))
+			switch iexpo {
+			case 2:
+				ifact *= 2
+			case 3:
+				ifact *= 6
+			case 4:
+				ifact *= 24
+			}
+			if iexpo > 0 {
+				for k := 0; k < iexpo; k++ {
+					ictmp[iccount+k] = j + 1
+				}
+				iccount += iexpo
+			}
+		}
+		ffcc := coeffs.At(i, 0) * float64(ifact) * 4.359813653e0
+		ret = append(ret, FC{ictmp, ffcc})
+	}
+	return
+}
+
 // Make9903 is a helper function for writing fort.9903 files, but it
 // also returns the force constants in a more usable format for
 // testing
@@ -381,7 +413,7 @@ func Newton(coeffs, exps *mat.Dense) []float64 {
 	nvbl, _ := exps.Dims()
 	x := make([]float64, nvbl)
 	// if exceed 100, give up, too many iterations
-	for iter := 0; iter < 100; iter++ {
+	for iter := 0; iter < MAXIT; iter++ {
 		grad := Grad(x, coeffs, exps)
 		hess := Hess(x, coeffs, exps)
 		var invHess mat.Dense
@@ -401,6 +433,7 @@ func Newton(coeffs, exps *mat.Dense) []float64 {
 		del.Scale(0.5, &del)
 		for _, i := range del.RawMatrix().Data {
 			if i > 1.1e-8 {
+				sum = i
 				iconv = false
 				break
 			}
