@@ -183,7 +183,6 @@ func Fit(disps *mat.Dense, energies []float64, exps [][]int) (
 	pts := len(energies)
 	X := mat.NewDense(pts, coeffs, nil)
 	var (
-		prod float64
 		xijs []float64
 		Ejk  int
 	)
@@ -191,24 +190,23 @@ func Fit(disps *mat.Dense, energies []float64, exps [][]int) (
 	for i := 0; i < pts; i++ {
 		xijs = disps.RawRowView(i)
 		for k := 0; k < coeffs; k++ {
-			prod = 1.0
+			tmp[k] = 1.0
 			for j, xij := range xijs {
 				Ejk = exps[j][k]
 				switch Ejk {
 				case 0.0:
 				case 1.0:
-					prod *= xij
+					tmp[k] *= xij
 				case 2.0:
-					prod *= xij * xij
+					tmp[k] *= xij * xij
 				case 3.0:
-					prod *= xij * xij * xij
+					tmp[k] *= xij * xij * xij
 				case 4.0:
-					prod *= xij * xij * xij * xij
+					tmp[k] *= xij * xij * xij * xij
 				default:
 					panic("didn't match exponent")
 				}
 			}
-			tmp[k] = prod
 		}
 		X.SetRow(i, tmp)
 	}
