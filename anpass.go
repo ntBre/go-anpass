@@ -44,7 +44,7 @@ func toFloat(strs ...string) []float64 {
 // energies, and exponents as []float64s. exps could be integers, but
 // you want them as floats for use in math.Pow
 func ReadInput(filename string) (disps *mat.Dense, energies []float64,
-	exps *mat.Dense, biases []float64, stationary bool) {
+	exps [][]int, biases []float64, stationary bool) {
 	f, err := os.Open(filename)
 	if err != nil {
 		panic(err)
@@ -54,7 +54,7 @@ func ReadInput(filename string) (disps *mat.Dense, energies []float64,
 		line      string
 		fields    []string
 		dispSlice []float64
-		expsSlice []float64
+		expsSlice []int
 		ndisps    int
 	)
 	var handler func(string)
@@ -66,7 +66,10 @@ func ReadInput(filename string) (disps *mat.Dense, energies []float64,
 	}
 	unkHandler := func(line string) {
 		fields = strings.Fields(line)
-		expsSlice = append(expsSlice, toFloat(fields...)...)
+		for _, d := range fields {
+			v, _ := strconv.Atoi(d)
+			expsSlice = append(expsSlice, v)
+		}
 	}
 	statHandler := func(line string) {
 		fields = strings.Fields(line)
@@ -96,8 +99,22 @@ func ReadInput(filename string) (disps *mat.Dense, energies []float64,
 		biases = make([]float64, ndisps+1)
 	}
 	disps = mat.NewDense(len(dispSlice)/ndisps, ndisps, dispSlice)
-	exps = mat.NewDense(ndisps, len(expsSlice)/ndisps, expsSlice)
+	exps = Reshape(ndisps, len(expsSlice)/ndisps, expsSlice)
 	return
+}
+
+// Dims returns the number of rows and cols in m, assuming each row in m has the
+// same length as the first
+func Dims(m [][]int) (rows, cols int) {
+	return len(m), len(m[0])
+}
+
+func Reshape(rows, cols int, v []int) [][]int {
+	ret := make([][]int, rows)
+	for i := 0; i < rows; i++ {
+		ret[i] = v[cols*i : cols*i+cols]
+	}
+	return ret
 }
 
 func Bias(disps *mat.Dense, energies, biases []float64) (*mat.Dense, []float64) {
@@ -116,17 +133,20 @@ func Bias(disps *mat.Dense, energies, biases []float64) (*mat.Dense, []float64) 
 	return ret, enew
 }
 
-func Eval(Xi, C []float64, exps *mat.Dense) float64 {
-	var prod, sum, Ejk float64
+func Eval(Xi, C []float64, exps [][]int) float64 {
+	var (
+		prod, sum float64
+		Ejk       int
+	)
 	for k := range C {
 		prod = C[k]
 		if math.Abs(prod) < THR {
 			continue
 		}
 		for j := range Xi {
-			Ejk = exps.At(j, k)
-			if Ejk != 0.0 {
-				prod *= math.Pow(Xi[j], Ejk)
+			Ejk = exps[j][k]
+			if Ejk != 0 {
+				prod *= math.Pow(Xi[j], float64(Ejk))
 			}
 		}
 		sum += prod
@@ -157,14 +177,15 @@ func PrintVec(out io.Writer, v []float64) {
 // Fit determines the coefficient vector using ordinary least squares
 // and returns the solution vector along with the matrix describing
 // the function
-func Fit(disps *mat.Dense, energies []float64, exps *mat.Dense) (
+func Fit(disps *mat.Dense, energies []float64, exps [][]int) (
 	soln, fn *mat.Dense) {
-	_, coeffs := exps.Dims()
+	_, coeffs := Dims(exps)
 	pts := len(energies)
 	X := mat.NewDense(pts, coeffs, nil)
 	var (
-		prod, Ejk float64
-		xijs      []float64
+		prod float64
+		xijs []float64
+		Ejk  int
 	)
 	tmp := make([]float64, coeffs)
 	for i := 0; i < pts; i++ {
@@ -172,7 +193,7 @@ func Fit(disps *mat.Dense, energies []float64, exps *mat.Dense) (
 		for k := 0; k < coeffs; k++ {
 			prod = 1.0
 			for j, xij := range xijs {
-				Ejk = exps.At(j, k)
+				Ejk = exps[j][k]
 				switch Ejk {
 				case 0.0:
 				case 1.0:
@@ -200,7 +221,9 @@ func Fit(disps *mat.Dense, energies []float64, exps *mat.Dense) (
 		if strings.Contains(err.Error(), "Inf") {
 			panic(err)
 		}
-		fmt.Fprintf(os.Stderr, "WARNING: %v\n", err)
+		if !Quiet {
+			fmt.Fprintf(os.Stderr, "WARNING: %v\n", err)
+		}
 	}
 	var mul mat.Dense
 	mul.Mul(&inv, X.T())
@@ -263,22 +286,15 @@ func MakeFCs(coeffs, exps *mat.Dense) (ret []FC) {
 // Make9903 is a helper function for writing fort.9903 files, but it
 // also returns the force constants in a more usable format for
 // testing
-func Make9903(w io.Writer, coeffs, exps *mat.Dense) (ret []FC) {
-	c, r := exps.Dims()
+func Make9903(w io.Writer, coeffs *mat.Dense, exps [][]int) (ret []FC) {
+	c, r := Dims(exps)
 	for i := 0; i < r; i++ {
 		ifact := 1
 		var ictmp [4]int
 		iccount := 0
 		for j := c - 1; j >= 0; j-- {
-			iexpo := int(exps.At(j, i))
-			switch iexpo {
-			case 2:
-				ifact *= 2
-			case 3:
-				ifact *= 6
-			case 4:
-				ifact *= 24
-			}
+			iexpo := exps[j][i]
+			ifact *= []int{1, 1, 2, 6, 24}[iexpo]
 			if iexpo > 0 {
 				for k := 0; k < iexpo; k++ {
 					ictmp[iccount+k] = j + 1
@@ -296,7 +312,7 @@ func Make9903(w io.Writer, coeffs, exps *mat.Dense) (ret []FC) {
 	return
 }
 
-func Write9903(filename string, coeffs, exps *mat.Dense) []FC {
+func Write9903(filename string, coeffs *mat.Dense, exps [][]int) []FC {
 	f, err := os.Create(filename)
 	defer f.Close()
 	if err != nil {
@@ -305,23 +321,25 @@ func Write9903(filename string, coeffs, exps *mat.Dense) []FC {
 	return Make9903(f, coeffs, exps)
 }
 
-func Grad(x []float64, coeffs, exps *mat.Dense) (grd []float64) {
+func Grad(x []float64, coeffs *mat.Dense, exps [][]int) (grd []float64) {
 	var sum float64
-	nvbl, nunk := exps.Dims()
+	nvbl, nunk := Dims(exps)
 	grd = make([]float64, nvbl)
 	for i := 0; i < nvbl; i++ {
 		sum = 0.0
 		for j := 0; j < nunk; j++ {
-			coj := coeffs.At(j, 0) * exps.At(i, j)
+			fij := float64(exps[i][j])
+			coj := coeffs.At(j, 0) * fij
 			if math.Abs(coj) < THR {
 				continue
 			}
-			if exps.At(i, j) != 1 {
-				coj *= math.Pow(x[i], exps.At(i, j)-1)
+			if exps[i][j] != 1 {
+				coj *= math.Pow(x[i], fij-1)
 			}
 			for k := 0; k < nvbl; k++ {
-				if k != i && exps.At(k, j) != 0 {
-					coj *= math.Pow(x[k], exps.At(k, j))
+				ekj := exps[k][j]
+				if k != i && ekj != 0 {
+					coj *= math.Pow(x[k], float64(ekj))
 				}
 			}
 			sum += coj
@@ -331,8 +349,8 @@ func Grad(x []float64, coeffs, exps *mat.Dense) (grd []float64) {
 	return
 }
 
-func Hess(x []float64, coeffs, exps *mat.Dense) *mat.SymDense {
-	nvbl, nunk := exps.Dims()
+func Hess(x []float64, coeffs *mat.Dense, exps [][]int) *mat.SymDense {
+	nvbl, nunk := Dims(exps)
 	var (
 		il  int
 		sum float64
@@ -340,7 +358,9 @@ func Hess(x []float64, coeffs, exps *mat.Dense) *mat.SymDense {
 	coeffSlice := coeffs.RawMatrix().Data
 	hess := make([]float64, nvbl*(nvbl-1))
 	var (
-		coj, eij, elj, ekj float64
+		coj           float64
+		eij, elj, ekj int
+		fij, flj      float64
 	)
 	for i := 0; i < nvbl; i++ {
 		for l := 0; l <= i; l++ {
@@ -348,22 +368,24 @@ func Hess(x []float64, coeffs, exps *mat.Dense) *mat.SymDense {
 			if i != l { // => off-diagonal
 				for j := 0; j < nunk; j++ {
 					coj = coeffSlice[j]
-					eij = exps.At(i, j)
-					elj = exps.At(l, j)
-					coj *= eij * elj
+					eij = exps[i][j]
+					elj = exps[l][j]
+					fij = float64(eij)
+					flj = float64(elj)
+					coj *= fij * flj
 					if math.Abs(coj) < THR {
 						continue
 					}
 					if eij != 1 {
-						coj *= math.Pow(x[i], eij-1)
+						coj *= math.Pow(x[i], fij-1)
 					}
 					if elj != 1 {
-						coj *= math.Pow(x[l], elj-1)
+						coj *= math.Pow(x[l], flj-1)
 					}
 					for k := 0; k < nvbl; k++ {
 						if k != i && k != l {
-							if ekj = exps.At(k, j); ekj != 0 {
-								coj *= math.Pow(x[k], ekj)
+							if ekj = exps[k][j]; ekj != 0 {
+								coj *= math.Pow(x[k], float64(ekj))
 							}
 						}
 					}
@@ -372,20 +394,19 @@ func Hess(x []float64, coeffs, exps *mat.Dense) *mat.SymDense {
 			} else { // => diagonal
 				for j := 0; j < nunk; j++ {
 					coj = coeffSlice[j]
-					eij = exps.At(i, j)
-					coj *= eij
-					coj *= eij - 1
+					eij = exps[i][j]
+					fij = float64(eij)
+					coj *= fij * (fij - 1)
 					if math.Abs(coj) < THR {
 						continue
 					}
-					if exps.At(i, j) != 2 {
-						coj *= math.Pow(x[i],
-							eij-2)
+					if exps[i][j] != 2 {
+						coj *= math.Pow(x[i], fij-2)
 					}
 					for k := 0; k < nvbl; k++ {
 						if k != i {
-							if ekj = exps.At(k, j); ekj != 0 {
-								coj *= math.Pow(x[k], ekj)
+							if ekj = exps[k][j]; ekj != 0 {
+								coj *= math.Pow(x[k], float64(ekj))
 							}
 						}
 					}
@@ -409,8 +430,8 @@ func Hess(x []float64, coeffs, exps *mat.Dense) *mat.SymDense {
 
 // Newton uses the Newton-Raphson method to find the roots of the
 // equation given by coeffs and exps
-func Newton(coeffs, exps *mat.Dense) []float64 {
-	nvbl, _ := exps.Dims()
+func Newton(coeffs *mat.Dense, exps [][]int) []float64 {
+	nvbl, _ := Dims(exps)
 	x := make([]float64, nvbl)
 	// if exceed 100, give up, too many iterations
 	for iter := 0; iter < MAXIT; iter++ {
@@ -457,7 +478,7 @@ func Newton(coeffs, exps *mat.Dense) []float64 {
 
 // Characterize stationary point x by computing the Hessian and
 // determining its eigenvalues
-func Characterize(x []float64, coeffs, exps *mat.Dense) (
+func Characterize(x []float64, coeffs *mat.Dense, exps [][]int) (
 	evals []float64, evecs *mat.Dense, kind Stat) {
 	h := Hess(x, coeffs, exps)
 	var eig mat.EigenSym
@@ -517,7 +538,7 @@ func CopyAnpass(infile, outfile string, longLine []float64) {
 // exps; it then calls Newton to locate the stationary point and evaluates the
 // function at the stationary point.
 func Run(w io.Writer, dir string, disps *mat.Dense, energies []float64,
-	exps *mat.Dense) (longLine []float64, fcs []FC, stationary bool) {
+	exps [][]int) (longLine []float64, fcs []FC, stationary bool) {
 	coeffs, fn := Fit(disps, energies, exps)
 	PrintResiduals(w, coeffs, fn, energies)
 	fcs = Write9903(filepath.Join(dir, "fort.9903"), coeffs, exps)

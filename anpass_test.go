@@ -42,7 +42,7 @@ func TestEval(t *testing.T) {
 	}
 	disps, _, exps, _, _ := ReadInput("testfiles/anpass.in")
 	// nvbl, nunk := exps.Dims()
-	_, nunk := exps.Dims()
+	_, nunk := Dims(exps)
 	coeffs := make([]float64, nunk)
 	got := make([]float64, len(want))
 	i := 0
@@ -119,7 +119,7 @@ func TestMake9903(t *testing.T) {
 				fc.Coord, want[i].Coord, i)
 		}
 		if !nearby(fc.Val, want[i].Val, 5e-7) {
-			t.Errorf("got %v, wanted %v at index %d\n",
+			t.Errorf("got %e, wanted %e at index %d\n",
 				fc.Val, want[i].Val, i)
 		}
 	}
@@ -141,10 +141,12 @@ func compFC(got, want []FC, eps float64) bool {
 	return true
 }
 
-func deepError(t *testing.T, a, b interface{}) {
+func deepError(t *testing.T, a, b interface{}) bool {
 	if !reflect.DeepEqual(a, b) {
 		t.Errorf("got %v, wanted %v\n", a, b)
+		return false
 	}
+	return true
 }
 
 func TestReadInput(t *testing.T) {
@@ -152,7 +154,7 @@ func TestReadInput(t *testing.T) {
 		infile   string
 		disps    []float64
 		energies []float64
-		exps     []float64
+		exps     [][]int
 		biases   []float64
 		stat     bool
 	}{
@@ -160,15 +162,29 @@ func TestReadInput(t *testing.T) {
 			infile:   "testfiles/anpass.in",
 			disps:    loadSlice("testfiles/anpass.disps"),
 			energies: loadSlice("testfiles/anpass.nrg"),
-			exps:     loadSlice("testfiles/anpass.exp"),
-			biases:   []float64{0, 0, 0, 0},
-			stat:     false,
+			exps: [][]int{
+				{0, 1, 0, 2, 1, 0, 0, 3, 2, 1, 0, 1, 0, 4, 3, 2,
+					1, 0, 2, 1, 0, 0},
+				{0, 0, 1, 0, 1, 2, 0, 0, 1, 2, 3, 0, 1, 0, 1, 2,
+					3, 4, 0, 1, 2, 0},
+				{0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 2, 0, 0, 0,
+					0, 0, 2, 2, 2, 4},
+			},
+			biases: []float64{0, 0, 0, 0},
+			stat:   false,
 		},
 		{
 			infile:   "testfiles/anpass2.in",
 			disps:    loadSlice("testfiles/anpass2.disps"),
 			energies: loadSlice("testfiles/anpass2.nrg"),
-			exps:     loadSlice("testfiles/anpass.exp"),
+			exps: [][]int{
+				{0, 1, 0, 2, 1, 0, 0, 3, 2, 1, 0, 1, 0, 4, 3, 2,
+					1, 0, 2, 1, 0, 0},
+				{0, 0, 1, 0, 1, 2, 0, 0, 1, 2, 3, 0, 1, 0, 1, 2,
+					3, 4, 0, 1, 2, 0},
+				{0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 2, 0, 0, 0,
+					0, 0, 2, 2, 2, 4},
+			},
 			biases: []float64{
 				-0.000045311426,
 				-0.000027076533,
@@ -182,7 +198,7 @@ func TestReadInput(t *testing.T) {
 		disps, energies, exps, biases, stat := ReadInput(test.infile)
 		deepError(t, disps.RawMatrix().Data, test.disps)
 		deepError(t, energies, test.energies)
-		deepError(t, exps.RawMatrix().Data, test.exps)
+		deepError(t, exps, test.exps)
 		deepError(t, biases, test.biases)
 		deepError(t, stat, test.stat)
 	}
@@ -219,8 +235,24 @@ func TestPrintResiduals(t *testing.T) {
 	}
 }
 
+func TestReshape(t *testing.T) {
+	got := Reshape(3, 3, []int{1, 2, 3, 4, 5, 6, 7, 8, 9})
+	want := [][]int{
+		{1, 2, 3},
+		{4, 5, 6},
+		{7, 8, 9},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, wanted %v\n", got, want)
+	}
+}
+
 func BenchmarkFit(b *testing.B) {
-	disps, energies, exps, _, _ := ReadInput("testfiles/anpass.in")
+	Quiet = true
+	defer func() {
+		Quiet = false
+	}()
+	disps, energies, exps, _, _ := ReadInput("full_tests/c5h2.in")
 	for n := 0; n < b.N; n++ {
 		Fit(disps, energies, exps)
 	}

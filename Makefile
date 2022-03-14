@@ -1,6 +1,7 @@
 TFLAGS = -v -failfast -parallel 1
 
-ifeq ($(SHORT),1)
+SHORT = 0
+ifeq ($(SHORT),0)
 TFLAGS += -short
 endif
 
@@ -25,3 +26,6 @@ bench:
 
 newton.prof: *.go
 	go test . -bench Newton -run BenchmarkNewton -cpuprofile $@
+
+fit.prof: *.go
+	go test . -bench Fit -run BenchmarkFit -cpuprofile $@
