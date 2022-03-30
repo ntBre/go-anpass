@@ -246,35 +246,10 @@ func PrintResiduals(w io.Writer, x, A *mat.Dense, energies []float64) (
 	return
 }
 
-// MakeFCs is a a copy of Make9903 without the Writer. It just returns the slice
-// of force constants instead of formatting them for output
-func MakeFCs(coeffs, exps *mat.Dense) (ret []FC) {
-	c, r := exps.Dims()
-	for i := 0; i < r; i++ {
-		ifact := 1
-		var ictmp [4]int
-		iccount := 0
-		for j := c - 1; j >= 0; j-- {
-			iexpo := int(exps.At(j, i))
-			switch iexpo {
-			case 2:
-				ifact *= 2
-			case 3:
-				ifact *= 6
-			case 4:
-				ifact *= 24
-			}
-			if iexpo > 0 {
-				for k := 0; k < iexpo; k++ {
-					ictmp[iccount+k] = j + 1
-				}
-				iccount += iexpo
-			}
-		}
-		ffcc := coeffs.At(i, 0) * float64(ifact) * 4.359813653e0
-		ret = append(ret, FC{ictmp, ffcc})
-	}
-	return
+// MakeFCs calls Make9903 with os.DevNull as the writer
+func MakeFCs(coeffs *mat.Dense, exps [][]int) (ret []FC) {
+	null, _ := os.Open(os.DevNull)
+	return Make9903(null, coeffs, exps)
 }
 
 // Make9903 is a helper function for writing fort.9903 files, but it
