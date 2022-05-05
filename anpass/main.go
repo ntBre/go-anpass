@@ -4,6 +4,7 @@ import (
 	"flag"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ntBre/anpass"
@@ -46,7 +47,8 @@ func main() {
 	disps, energies, exps, biases, stationary := anpass.ReadInput(infile)
 	anpass.PrintBias(out, biases)
 	disps, energies = anpass.Bias(disps, energies, biases)
-	longLine, _, stationary := anpass.Run(out, disps, energies, exps)
+	dir := filepath.Dir(infile)
+	longLine, _, stationary := anpass.Run(out, dir, disps, energies, exps)
 	// pass the longline and do anpass2 if the first run wasn't on
 	// a stationary point
 	if !*once && !stationary {
@@ -65,6 +67,6 @@ func main() {
 		}
 		anpass.PrintBias(out, longLine)
 		disps, energies = anpass.Bias(disps, energies, longLine)
-		anpass.Run(out, disps, energies, exps)
+		anpass.Run(out, dir, disps, energies, exps)
 	}
 }
