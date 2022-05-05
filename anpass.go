@@ -248,22 +248,15 @@ func PrintResiduals(w io.Writer, x, A *mat.Dense, energies []float64) (
 
 // MakeFCs is a a copy of Make9903 without the Writer. It just returns the slice
 // of force constants instead of formatting them for output
-func MakeFCs(coeffs, exps *mat.Dense) (ret []FC) {
-	c, r := exps.Dims()
+func MakeFCs(coeffs *mat.Dense, exps [][]int) (ret []FC) {
+	c, r := Dims(exps)
 	for i := 0; i < r; i++ {
 		ifact := 1
 		var ictmp [4]int
 		iccount := 0
 		for j := c - 1; j >= 0; j-- {
-			iexpo := int(exps.At(j, i))
-			switch iexpo {
-			case 2:
-				ifact *= 2
-			case 3:
-				ifact *= 6
-			case 4:
-				ifact *= 24
-			}
+			iexpo := exps[j][i]
+			ifact *= []int{1, 1, 2, 6, 24}[iexpo]
 			if iexpo > 0 {
 				for k := 0; k < iexpo; k++ {
 					ictmp[iccount+k] = j + 1
